@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>symSpell.Benchmark.BenchmarkDotNet</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet=v0.11.3, OS=Windows 10.0.17134.523 (1803/April2018Update/Redstone4)
+Intel Core i7-4770 CPU 3.40GHz (Haswell), 1 CPU, 8 logical and 4 physical cores
+.NET Core SDK=2.2.200-preview-009748
+  [Host]     : .NET Core 2.0.9 (CoreCLR 4.6.26614.01, CoreFX 4.6.26614.01), 64bit RyuJIT
+  Job-SOMZRJ : .NET Core 2.0.9 (CoreCLR 4.6.26614.01, CoreFX 4.6.26614.01), 64bit RyuJIT
+</code></pre>
+<pre><code>Jit=RyuJit  Platform=X64  Server=True  
+Toolchain=.NET Core 2.0  
+</code></pre>
+
+<table>
+<thead><tr><th>            Method</th><th>Mean</th><th>Error</th><th>StdDev</th><th>Ratio</th><th>Gen 0/1k Op</th><th>Gen 1/1k Op</th><th>Gen 2/1k Op</th><th>Allocated Memory/Op</th>
+</tr>
+</thead><tbody><tr><td>SymSpell_Single</td><td>70.702 ns</td><td>0.3084 ns</td><td>0.2575 ns</td><td>1.00</td><td>0.0015</td><td>-</td><td>-</td><td>136 B</td>
+</tr><tr><td>SymSpellOptimized_Single</td><td>58.493 ns</td><td>0.6441 ns</td><td>0.5029 ns</td><td>0.83</td><td>0.0012</td><td>-</td><td>-</td><td>112 B</td>
+</tr><tr><td>SymSpell_Empty</td><td>4.875 ns</td><td>0.0495 ns</td><td>0.0463 ns</td><td>0.07</td><td>-</td><td>-</td><td>-</td><td>-</td>
+</tr><tr><td>SymSpellOptimized_Empty</td><td>4.829 ns</td><td>0.0178 ns</td><td>0.0158 ns</td><td>0.07</td><td>-</td><td>-</td><td>-</td><td>-</td>
+</tr></tbody></table>
+</body>
+</html>
