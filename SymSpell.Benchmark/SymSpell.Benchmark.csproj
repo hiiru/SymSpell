@@ -1,15 +1,22 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.0</TargetFramework>
+    <TargetFrameworks>netcoreapp2.0;net461;net47;</TargetFrameworks>
+    <StartupObject>symSpell.Benchmark.Program</StartupObject>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <DefineConstants>DEBUG;NETCOREAPP2_0;</DefineConstants>
-    <Optimize>true</Optimize>
-    <Prefer32Bit>true</Prefer32Bit>
+    <DefineConstants>TRACE;DEBUG;NETCOREAPP2_0;</DefineConstants>
+    <Optimize>false</Optimize>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.11.3" />
+    <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.11.3" />
+    <PackageReference Include="System.Memory" Version="4.5.2" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SymSpell\SymSpell.csproj" />
