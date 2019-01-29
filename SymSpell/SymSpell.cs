@@ -70,35 +70,45 @@ public class SymSpell
     // Dictionary of unique words that are below the count threshold for being considered correct spellings.
     private Dictionary<string, Int64> belowThresholdWords = new Dictionary<string, long>();
 
+    //moved from SuggestItem to prevent IComparable<SuggestItem> implementation (and boxing during sort)
+    //private static int CompareSuggestItem(SuggestItem that, SuggestItem other)
+    //{
+    //    // order by distance ascending, then by frequency count descending
+    //    if (that.distance == other.distance) return other.count.CompareTo(that.count);
+    //    return that.distance.CompareTo(other.distance);
+    //}
+
     /// <summary>Spelling suggestion returned from Lookup.</summary>
     public class SuggestItem : IComparable<SuggestItem>
     {
         /// <summary>The suggested correctly spelled word.</summary>
-        public string term = "";
+        public string term { get; }
+
         /// <summary>Edit distance between searched for word and suggestion.</summary>
-        public int distance = 0;
+        public int distance { get; set; }
+
         /// <summary>Frequency of suggestion in the dictionary (a measure of how common the word is).</summary>
-        public Int64 count = 0;
+        public Int64 count { get; }
 
         /// <summary>Create a new instance of SuggestItem.</summary>
         /// <param name="term">The suggested word.</param>
         /// <param name="distance">Edit distance from search word.</param>
         /// <param name="count">Frequency of suggestion in dictionary.</param>
-        public SuggestItem()
-        {
-        }
         public SuggestItem(string term, int distance, Int64 count)
         {
             this.term = term;
             this.distance = distance;
             this.count = count;
         }
+
+        //moved from SuggestItem to prevent IComparable<SuggestItem> implementation (and boxing during sort)
         public int CompareTo(SuggestItem other)
         {
             // order by distance ascending, then by frequency count descending
             if (this.distance == other.distance) return other.count.CompareTo(this.count);
             return this.distance.CompareTo(other.distance);
         }
+
         public override bool Equals(object obj)
         {
             return Equals(term, ((SuggestItem)obj).term);
@@ -108,14 +118,10 @@ public class SymSpell
         {
             return term.GetHashCode();
         }
+
         public override string ToString()
         {
-            return "{" + term + ", " + distance + ", " + count + "}";
-        }
-
-        public SuggestItem ShallowCopy()
-        {
-            return (SuggestItem)MemberwiseClone();
+            return "{" + term + ", " + distance.ToString() + ", " + count.ToString() + "}";
         }
     }
 
@@ -366,8 +372,8 @@ public class SymSpell
     {
         return Lookup(input, verbosity, this.maxDictionaryEditDistance, false);
     }
-	
-	/// <summary>Find suggested spellings for a given input word, using the maximum
+
+    /// <summary>Find suggested spellings for a given input word, using the maximum
     /// edit distance specified during construction of the SymSpell dictionary.</summary>
     /// <param name="input">The word being spell checked.</param>
     /// <param name="verbosity">The value controlling the quantity/closeness of the retuned suggestions.</param>
@@ -394,15 +400,16 @@ public class SymSpell
 
         // maxEditDistance used in Lookup can't be bigger than the maxDictionaryEditDistance
         // used to construct the underlying dictionary structure.
-        if (maxEditDistance > MaxDictionaryEditDistance) throw new ArgumentOutOfRangeException(nameof(maxEditDistance));
+        if (maxEditDistance > maxDictionaryEditDistance) throw new ArgumentOutOfRangeException(nameof(maxEditDistance));
 
-        List<SuggestItem> suggestions = new List<SuggestItem>();
+        // prevent first resize to default capacity (4)
+        List<SuggestItem> suggestions = new List<SuggestItem>(4);
         int inputLen = input.Length;
         // early exit - word is too big to possibly match any words
         if (inputLen - maxEditDistance > maxDictionaryWordLength) goto end;
 
         // quick look for exact match
-        long suggestionCount = 0;
+        long suggestionCount;
         if (words.TryGetValue(input, out suggestionCount))
         {
             suggestions.Add(new SuggestItem(input, 0, suggestionCount));
@@ -414,16 +421,15 @@ public class SymSpell
         if (maxEditDistance == 0) goto end;
 
         // deletes we've considered already
-        HashSet<string> hashset1 = new HashSet<string>();
+        var hashset1 = new HashSet<int>();
         // suggestions we've considered already
-        HashSet<string> hashset2 = new HashSet<string>();		
-		// we considered the input already in the word.TryGetValue above		
-        hashset2.Add(input); 
+        var hashset2 = new HashSet<int>();
+        // we considered the input already in the word.TryGetValue above		
+        hashset2.Add(GetStringHash(input));
 
         int maxEditDistance2 = maxEditDistance;
         int candidatePointer = 0;
-        var singleSuggestion = new string[1] { string.Empty };
-        List<string> candidates = new List<string>();
+        List<string> candidates = new List<string>(4);
 
         //add original prefix
         int inputPrefixLen = inputLen;
@@ -476,18 +482,18 @@ public class SymSpell
                     //To prevent suggestions of a higher edit distance, we need to calculate the resulting edit distance, if there are simultaneous edits on both sides.
                     //Example: (bank==bnak and bank==bink, but bank!=kanb and bank!=xban and bank!=baxn for maxEditDistance=1)
                     //Two deletes on each side of a pair makes them all equal, but the first two pairs have edit distance=1, the others edit distance=2.
-                    int distance = 0;
-                    int min = 0;
+                    int distance;
+                    int min=0;
                     if (candidateLen == 0)
                     {
                         //suggestions which have no common chars with input (inputLen<=maxEditDistance && suggestionLen<=maxEditDistance)
                         distance = Math.Max(inputLen, suggestionLen);
-                        if (distance > maxEditDistance2 || !hashset2.Add(suggestion)) continue;
+                        if (distance > maxEditDistance2 || !hashset2.Add(GetStringHash(suggestion))) continue;
                     }
                     else if (suggestionLen == 1)
                     {
                         if (input.IndexOf(suggestion[0]) < 0) distance = inputLen; else distance = inputLen - 1;
-                        if (distance > maxEditDistance2 || !hashset2.Add(suggestion)) continue;
+                        if (distance > maxEditDistance2 || !hashset2.Add(GetStringHash(suggestion))) continue;
                     }
                     else
                     //number of edits in prefix ==maxediddistance  AND no identic suffix
@@ -495,7 +501,7 @@ public class SymSpell
                     //      (inputLen >= prefixLength) && (suggestionLen >= prefixLength) 
                     if ((prefixLength - maxEditDistance == candidateLen)
                         && (((min = Math.Min(inputLen, suggestionLen) - prefixLength) > 1)
-                            && (input.Substring(inputLen + 1 - min) != suggestion.Substring(suggestionLen + 1 - min)))
+                              && (input.Substring(inputLen + 1 - min) != suggestion.Substring(suggestionLen + 1 - min)))
                            || ((min > 0) && (input[inputLen - min] != suggestion[suggestionLen - min])
                                && ((input[inputLen - min - 1] != suggestion[suggestionLen - min])
                                    || (input[inputLen - min] != suggestion[suggestionLen - min - 1]))))
@@ -506,7 +512,7 @@ public class SymSpell
                     {
                         // DeleteInSuggestionPrefix is somewhat expensive, and only pays off when verbosity is Top or Closest.
                         if ((verbosity != Verbosity.All && !DeleteInSuggestionPrefix(candidate, candidateLen, suggestion, suggestionLen))
-                            || !hashset2.Add(suggestion)) continue;
+                            || !hashset2.Add(GetStringHash(suggestion))) continue;
                         distance = distanceComparer.Compare(input, suggestion, maxEditDistance2);
                         if (distance < 0) continue;
                     }
@@ -516,7 +522,6 @@ public class SymSpell
                     if (distance <= maxEditDistance2)
                     {
                         suggestionCount = words[suggestion];
-                        SuggestItem si = new SuggestItem(suggestion, distance, suggestionCount);
                         if (suggestions.Count > 0)
                         {
                             switch (verbosity)
@@ -532,14 +537,14 @@ public class SymSpell
                                         if (distance < maxEditDistance2 || suggestionCount > suggestions[0].count)
                                         {
                                             maxEditDistance2 = distance;
-                                            suggestions[0] = si;
+                                            suggestions[0] = new SuggestItem(suggestion, distance, suggestionCount);
                                         }
                                         continue;
                                     }
                             }
                         }
                         if (verbosity != Verbosity.All) maxEditDistance2 = distance;
-                        suggestions.Add(si);
+                        suggestions.Add(new SuggestItem(suggestion, distance, suggestionCount));
                     }
                 }//end foreach
             }//end if         
@@ -557,17 +562,17 @@ public class SymSpell
                 {
                     string delete = candidate.Remove(i, 1);
 
-                    if (hashset1.Add(delete)) { candidates.Add(delete); }
+                    if (hashset1.Add(GetStringHash(delete))) { candidates.Add(delete); }
                 }
             }
         }//end while
 
         //sort by ascending edit distance, then by descending word frequency
-        if (suggestions.Count > 1) suggestions.Sort();
-		end: if (includeUnknown && (suggestions.Count == 0)) suggestions.Add(new SuggestItem(input, maxEditDistance + 1, 0));																															 
+        if (suggestions.Count > 1) suggestions.Sort();//CompareSuggestItem
+        end: if (includeUnknown && suggestions.Count == 0) suggestions.Add(new SuggestItem(input, maxEditDistance + 1, 0));
         return suggestions;
     }//end if         
-	
+
 
     /// <summary>An intentionally opacque class used to temporarily stage
     /// dictionary data during the adding of many words. By staging the
@@ -805,38 +810,48 @@ public class SymSpell
 
         //translate every term to its best suggestion, otherwise it remains unchanged
         bool lastCombi = false;
-        for (int i = 0; i < termList1.Length; i++)
+        //also used for loop at the end
+        int i = 0;
+        for (; i < termList1.Length; i++)
         {
-            suggestionsPreviousTerm = new List<SuggestItem>(suggestions.Count); for (int k = 0; k < suggestions.Count; k++) suggestionsPreviousTerm.Add(suggestions[k].ShallowCopy());
-            suggestions = Lookup(termList1[i], Verbosity.Top, editDistanceMax);
+            ref string currentTerm = ref termList1[i];
+            suggestionsPreviousTerm = new List<SuggestItem>(suggestions.Count);
+            for (int k = 0; k < suggestions.Count; k++)
+            {
+                var si = suggestions[k];
+                suggestionsPreviousTerm.Add(new SuggestItem(si.term, si.distance, si.count));
+            }
+            suggestions = Lookup(currentTerm, Verbosity.Top, editDistanceMax);
 
 
             //combi check, always before split
             if ((i > 0) && !lastCombi)
             {
-                List<SuggestItem> suggestionsCombi = Lookup(termList1[i - 1] + termList1[i], Verbosity.Top, editDistanceMax);
+                ref string previousTerm = ref termList1[i - 1];
+                List<SuggestItem> suggestionsCombi = Lookup(previousTerm + currentTerm, Verbosity.Top, editDistanceMax);
 
                 if (suggestionsCombi.Count > 0)
                 {
+                    int distance1;
                     SuggestItem best1 = suggestionParts[suggestionParts.Count - 1];
-                    SuggestItem best2 = new SuggestItem();
                     if (suggestions.Count > 0)
                     {
-                        best2 = suggestions[0];
-
+                        //prevent SuggestItem allocation of only the term is used
+                        string best2term = suggestions[0].term;
+                        distance1 = distanceComparer.Compare(previousTerm + " " + currentTerm, best1.term + " " + best2term, editDistanceMax);
                     }
                     else
                     {
-                        best2.term = termList1[i];
-                        best2.distance = editDistanceMax + 1;
-                        best2.count = 0;
+                        //prevent string concat for distance comparisation if best2term is termList1[i]
+                        distance1 = distanceComparer.Compare(previousTerm, best1.term, editDistanceMax);
                     }
-                    //if (suggestionsCombi[0].distance + 1 < DamerauLevenshteinDistance(termList1[i - 1] + " " + termList1[i], best1.term + " " + best2.term))
-                    int distance1 = distanceComparer.Compare(termList1[i - 1] + " " + termList1[i], best1.term + " " + best2.term, editDistanceMax);
-                    if ((distance1>=0)&&(suggestionsCombi[0].distance + 1 < distance1))
+                    var firstCombi = suggestionsCombi[0];
+                    if ((distance1 >= 0) && (firstCombi.distance + 1 < distance1))
                     {
-                        suggestionsCombi[0].distance++;
-                        suggestionParts[suggestionParts.Count - 1] = suggestionsCombi[0];
+                        firstCombi.distance++;
+                        //updating value (since struct is value type not reference)
+                        suggestionsCombi[0] = firstCombi;
+                        suggestionParts[suggestionParts.Count - 1] = firstCombi;
                         lastCombi = true;
                         goto nextTerm;
                     }
@@ -845,7 +860,7 @@ public class SymSpell
             lastCombi = false;
 
             //alway split terms without suggestion / never split terms with suggestion ed=0 / never split single char terms
-            if ((suggestions.Count > 0) && ((suggestions[0].distance == 0) || (termList1[i].Length == 1)))
+            if ((suggestions.Count > 0) && ((suggestions[0].distance == 0) || (currentTerm.Length == 1)))
             {
                 //choose best suggestion
                 suggestionParts.Add(suggestions[0]);
@@ -858,14 +873,13 @@ public class SymSpell
                 //add original term
                 if (suggestions.Count > 0) suggestionsSplit.Add(suggestions[0]);
 
-                if (termList1[i].Length > 1)
+                if (currentTerm.Length > 1)
                 {
 
-                    for (int j = 1; j < termList1[i].Length; j++)
+                    for (int j = 1; j < currentTerm.Length; j++)
                     {
-                        string part1 = termList1[i].Substring(0, j);
-                        string part2 = termList1[i].Substring(j);
-                        SuggestItem suggestionSplit = new SuggestItem();
+                        string part1 = currentTerm.Substring(0, j);
+                        string part2 = currentTerm.Substring(j);
                         List<SuggestItem> suggestions1 = Lookup(part1, Verbosity.Top, editDistanceMax);
                         if (suggestions1.Count > 0)
                         {
@@ -874,12 +888,11 @@ public class SymSpell
                             if (suggestions2.Count > 0)
                             {
                                 if ((suggestions.Count > 0) && (suggestions[0].term == suggestions2[0].term)) break;//if split correction1 == einzelwort correction
+                                var term = suggestions1[0].term + " " + suggestions2[0].term;
                                 //select best suggestion for split pair
-                                suggestionSplit.term = suggestions1[0].term + " " + suggestions2[0].term;
-                                int distance2 = distanceComparer.Compare(termList1[i], suggestions1[0].term + " " + suggestions2[0].term, editDistanceMax);
+                                int distance2 = distanceComparer.Compare(currentTerm, term, editDistanceMax);
                                 if (distance2 < 0) distance2 = editDistanceMax + 1;
-                                suggestionSplit.distance = distance2;
-                                suggestionSplit.count = Math.Min(suggestions1[0].count, suggestions2[0].count);
+                                var suggestionSplit = new SuggestItem(term, distance2, Math.Min(suggestions1[0].count, suggestions2[0].count));
                                 suggestionsSplit.Add(suggestionSplit);
 
                                 //early termination of split
@@ -896,34 +909,32 @@ public class SymSpell
                     }
                     else
                     {
-                        SuggestItem si = new SuggestItem();
-                        si.term = termList1[i];
-                        si.count = 0;
-                        si.distance = editDistanceMax + 1;
-                        suggestionParts.Add(si);
+                        suggestionParts.Add(new SuggestItem(currentTerm, editDistanceMax + 1, 0));
                     }
                 }
                 else
                 {
-                    SuggestItem si = new SuggestItem();
-                    si.term = termList1[i];
-                    si.count = 0;
-                    si.distance = editDistanceMax + 1;
-                    suggestionParts.Add(si);
+                    suggestionParts.Add(new SuggestItem(currentTerm, editDistanceMax + 1, 0));
                 }
             }
-            nextTerm:;
+        nextTerm:;
         }
 
-        SuggestItem suggestion = new SuggestItem();
-        suggestion.count = Int64.MaxValue;
-        string s = ""; foreach (SuggestItem si in suggestionParts) { s += si.term + " "; suggestion.count = Math.Min(suggestion.count, si.count); }//Console.WriteLine(s);
-        suggestion.term = s.TrimEnd();
-        suggestion.distance = distanceComparer.Compare(input, suggestion.term, int.MaxValue);
-
-        List<SuggestItem> suggestionsLine = new List<SuggestItem>();
-        suggestionsLine.Add(suggestion);
-        return suggestionsLine;
+        string siTerm = string.Empty;
+        long count = long.MaxValue;
+        i = 0;
+        var loopLimit = suggestionParts.Count - 1;
+        for (; i < loopLimit; i++)
+        {
+            var si = suggestionParts[i];
+            siTerm += si.term + " ";
+            count = Math.Min(count, si.count);
+        }
+        var lastSi = suggestionParts[loopLimit];
+        siTerm += lastSi.term;
+        count = Math.Min(count, lastSi.count);
+        var distance = distanceComparer.Compare(input, siTerm, int.MaxValue);
+        return new List<SuggestItem>(1) { new SuggestItem(siTerm, distance, count) };
     }
 
 
@@ -979,7 +990,7 @@ public class SymSpell
     public (string segmentedString, string correctedString, int distanceSum, decimal probabilityLogSum) WordSegmentation(string input, int maxEditDistance, int maxSegmentationWordLength)
     {
         int arraySize = Math.Min(maxSegmentationWordLength, input.Length);
-        (string segmentedString, string correctedString, int distanceSum, decimal probabilityLogSum)[] compositions = new(string segmentedString, string correctedString, int distanceSum, decimal probabilityLogSum)[arraySize];
+        (string segmentedString, string correctedString, int distanceSum, decimal probabilityLogSum)[] compositions = new (string segmentedString, string correctedString, int distanceSum, decimal probabilityLogSum)[arraySize];
         int circularIndex = -1;
 
         //outer loop (column): all possible part start positions
